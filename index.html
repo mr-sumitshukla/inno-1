@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Professional AI Neck Posture Analyzer</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+<style>
+body{
+  margin:0;
+  font-family:Segoe UI;
+  background:#0f172a;
+  color:white;
+  text-align:center;
+}
+h1{
+  margin-top:20px;
+  font-weight:600;
+}
+.container{
+  display:flex;
+  justify-content:center;
+  gap:20px;
+  margin-top:20px;
+}
+video,canvas{
+  border-radius:12px;
+  width:480px;
+}
+.panel{
+  background:#1e293b;
+  padding:20px;
+  border-radius:12px;
+  width:320px;
+  text-align:left;
+}
+.metric{
+  margin-bottom:15px;
+}
+.good{color:#22c55e;}
+.mild{color:#facc15;}
+.poor{color:#ef4444;}
+</style>
+</head>
+
+<body>
+
+<h1>AI Clinical Neck Posture Analysis</h1>
+
+<div class="container">
+  <div>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="metric" id="forward"></div>
+    <div class="metric" id="lateral"></div>
+    <div class="metric" id="rotation"></div>
+    <div class="metric" id="flexion"></div>
+    <div class="metric" id="translation"></div>
+  </div>
+</div>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function angle(A,B,C){
+  const AB = {x:A.x-B.x, y:A.y-B.y};
+  const CB = {x:C.x-B.x, y:C.y-B.y};
+  const dot = AB.x*CB.x + AB.y*CB.y;
+  const magAB = Math.sqrt(AB.x**2+AB.y**2);
+  const magCB = Math.sqrt(CB.x**2+CB.y**2);
+  return Math.acos(dot/(magAB*magCB))*180/Math.PI;
+}
+
+function classify(value, goodMin, mildMin){
+  if(value >= goodMin) return "good";
+  if(value >= mildMin) return "mild";
+  return "poor";
+}
+
+const pose = new Pose({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+});
+
+pose.setOptions({
+  modelComplexity:1,
+  smoothLandmarks:true,
+  minDetectionConfidence:0.6,
+  minTrackingConfidence:0.6
+});
+
+pose.onResults(results=>{
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+
+  if(results.poseLandmarks){
+
+    const nose = results.poseLandmarks[0];
+    const leftEar = results.poseLandmarks[7];
+    const rightEar = results.poseLandmarks[8];
+    const leftShoulder = results.poseLandmarks[11];
+    const rightShoulder = results.poseLandmarks[12];
+
+    // 1️⃣ Forward Head (CVA Approx)
+    const verticalRef = {x:leftShoulder.x, y:0};
+    const forwardAngle = angle(nose,leftShoulder,verticalRef);
+    const forwardClass = classify(forwardAngle,52,48);
+    document.getElementById("forward").innerHTML =
+      `Forward Head Angle: ${forwardAngle.toFixed(1)}° 
+      <span class="${forwardClass}">(${forwardClass.toUpperCase()})</span>`;
+
+    // 2️⃣ Lateral Flexion
+    const lateralAngle = angle(leftEar,leftShoulder,rightShoulder);
+    document.getElementById("lateral").innerHTML =
+      `Lateral Flexion: ${lateralAngle.toFixed(1)}°`;
+
+    // 3️⃣ Rotation
+    const rotation = Math.abs(leftEar.x - rightEar.x)*100;
+    document.getElementById("rotation").innerHTML =
+      `Rotation Deviation: ${rotation.toFixed(1)}%`;
+
+    // 4️⃣ Flexion / Extension
+    const flexAngle = angle(nose,leftShoulder,rightShoulder);
+    document.getElementById("flexion").innerHTML =
+      `Flex/Extension: ${flexAngle.toFixed(1)}°`;
+
+    // 5️⃣ Lateral Head Translation
+    const midShoulderX = (leftShoulder.x + rightShoulder.x)/2;
+    const translation = Math.abs(nose.x - midShoulderX)*100;
+    document.getElementById("translation").innerHTML =
+      `Lateral Translation: ${translation.toFixed(1)}%`;
+  }
+});
+
+const camera = new Camera(video,{
+  onFrame: async()=>{
+    await pose.send({image:video});
+  },
+  width:480,
+  height:480
+});
+camera.start();
+</script>
+
+</body>
+</html>
